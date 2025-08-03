@@ -1,43 +1,96 @@
 #!/bin/bash
 
-Golden Hosting Enterprise - Custom Theme Toolkit (Safe Mode)
+Golden Hosting Enterprise - NookTheme Installer + Safe Custom Theme
+
+Includes full install, backup, and uninstall options
 
 Colors
 
 RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
 
-clear echo -e "${CYAN}==================================================" echo -e " Golden Hosting Enterprise - Theme Deployer" echo -e "==================================================${NC}" echo
+clear echo -e "${CYAN}==================================================" echo -e " Golden Hosting Enterprise - Full Panel Themer" echo -e " NookTheme • Background • Footer • Uninstall Option" echo -e "==================================================${NC}" echo
 
-echo -e "${YELLOW}[1]${NC} Install Theme" echo -e "${YELLOW}[2]${NC} Uninstall Theme (Restore Backup)" read -p "Select an option [1-2]: " option
+Main Menu
 
-if [[ "$option" == "2" ]]; then if [[ -f /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php ]]; then cp /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php 
-/var/www/pterodactyl/resources/views/templates/wrapper.blade.php echo -e "${GREEN}[RESTORED]${NC} wrapper.blade.php has been restored." else echo -e "${RED}[ERROR]${NC} No backup found." exit 1 fi
+echo -e "${YELLOW}[1]${NC} Install NookTheme + Custom Theme" echo -e "${YELLOW}[2]${NC} Uninstall Theme (Restore Backup)" read -p "Choose an option [1-2]: " option
 
-cd /var/www/pterodactyl || exit
-php artisan view:clear
-php artisan config:clear
-php artisan up
-systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null
-systemctl restart nginx
-echo -e "${GREEN}[DONE]${NC} Theme uninstalled."
-exit 0
+if [[ "$option" == "2" ]]; then echo -e "${CYAN}[INFO]${NC} Restoring backup..." WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php" BACKUP="$WRAPPER.bak"
+
+if [[ -f "$BACKUP" ]]; then
+    cp "$BACKUP" "$WRAPPER"
+    rm -f /var/www/pterodactyl/public/assets/custom-background.css
+    rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    echo -e "${GREEN}[RESTORED]${NC} Theme removed and panel restored."
+
+    cd /var/www/pterodactyl || exit
+    php artisan view:clear
+    php artisan config:clear
+    php artisan up
+    systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null
+    systemctl restart nginx
+    exit 0
+else
+    echo -e "${RED}[ERROR]${NC} No backup found. Cannot uninstall."
+    exit 1
+fi
 
 fi
 
-Install Theme
+STEP 1: Enter maintenance mode
 
-read -p "Enter image URL for background: " bg_url if [[ -z "$bg_url" ]]; then echo -e "${RED}[ERROR]${NC} No image URL provided." exit 1 fi
+cd /var/www/pterodactyl || exit php artisan down
 
-echo -e "${CYAN}[INFO]${NC} Downloading background..." mkdir -p /var/www/pterodactyl/public/assets/img wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+STEP 2: Download and extract NookTheme
 
-if [[ $? -ne 0 ]]; then echo -e "${RED}[ERROR]${NC} Failed to download image." exit 1 fi chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+echo -e "${CYAN}[INFO]${NC} Installing NookTheme..." curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
 
-echo -e "${CYAN}[INFO]${NC} Writing custom CSS..." cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css body { background-image: url('/assets/img/custom_bg.jpg'); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; } EOF
+STEP 3: Fix permissions
 
-echo -e "${CYAN}[INFO]${NC} Backing up wrapper.blade.php..." cp /var/www/pterodactyl/resources/views/templates/wrapper.blade.php 
-/var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php
+chmod -R 755 storage/* bootstrap/cache
 
-echo -e "${CYAN}[INFO]${NC} Updating wrapper to inject theme..." cat <<'EOW' > /var/www/pterodactyl/resources/views/templates/wrapper.blade.php @extends('templates.base.core')
+STEP 4: Install dependencies
+
+composer install --no-dev --optimize-autoloader
+
+STEP 5: Clear caches
+
+php artisan view:clear php artisan config:clear
+
+STEP 6: Migrate and seed
+
+php artisan migrate --seed --force
+
+STEP 7: Set ownership
+
+chown -R www-data:www-data /var/www/pterodactyl/*
+
+STEP 8: Restart queue
+
+php artisan queue:restart
+
+STEP 9: Exit maintenance mode
+
+php artisan up
+
+STEP 10: Ask for background URL
+
+read -p "Enter direct image URL for background: " bg_url if [[ -z "$bg_url" ]]; then echo -e "${RED}[ERROR]${NC} No image URL provided. Exiting." exit 1 fi
+
+STEP 11: Download image
+
+mkdir -p /var/www/pterodactyl/public/assets/img wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+
+STEP 12: Write custom CSS
+
+cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css body { background-image: url('/assets/img/custom_bg.jpg'); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; } EOF
+
+STEP 13: Backup and patch wrapper
+
+WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php" BACKUP="$WRAPPER.bak"
+
+if [ ! -f "$BACKUP" ]; then cp "$WRAPPER" "$BACKUP" fi
+
+cat <<'EOW' > "$WRAPPER" @extends('templates.base.core')
 
 @section('content') <link rel="stylesheet" href="/assets/custom-background.css">
 
@@ -51,9 +104,9 @@ echo -e "${CYAN}[INFO]${NC} Updating wrapper to inject theme..." cat <<'EOW' > /
 
 @endsection EOW
 
-cd /var/www/pterodactyl || exit php artisan view:clear php artisan config:clear php artisan up
+STEP 14: Final clear & restart
 
-systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null systemctl restart nginx
+cd /var/www/pterodactyl || exit php artisan view:clear php artisan config:clear php artisan up systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null systemctl restart nginx
 
-echo -e "\n${GREEN}[DONE]${NC} Theme installed successfully and panel is intact."
+echo -e "\n${GREEN}[DONE]${NC} NookTheme installed + custom theme applied. Panel is live."
 
