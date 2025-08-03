@@ -1,100 +1,59 @@
 #!/bin/bash
 
-# Golden Hosting Enterprise - Custom Theme Toolkit (Safe Mode)
+Golden Hosting Enterprise - Custom Theme Toolkit (Safe Mode)
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+Colors
 
-clear
-echo -e "${CYAN}=================================================="
-echo -e " Golden Hosting Enterprise - Theme Deployer"
-echo -e "==================================================${NC}"
-echo
+RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
 
-echo -e "${YELLOW}[1]${NC} Install Theme"
-echo -e "${YELLOW}[2]${NC} Uninstall Theme (Restore Backup)"
-read -p "Select an option [1-2]: " option
+clear echo -e "${CYAN}==================================================" echo -e " Golden Hosting Enterprise - Theme Deployer" echo -e "==================================================${NC}" echo
 
-if [[ "$option" == "2" ]]; then
-    if [[ -f /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php ]]; then
-        cp /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php \
-           /var/www/pterodactyl/resources/views/templates/wrapper.blade.php
-        echo -e "${GREEN}[RESTORED]${NC} wrapper.blade.php has been restored."
-    else
-        echo -e "${RED}[ERROR]${NC} No backup found."
-        exit 1
-    fi
+echo -e "${YELLOW}[1]${NC} Install Theme" echo -e "${YELLOW}[2]${NC} Uninstall Theme (Restore Backup)" read -p "Select an option [1-2]: " option
 
-    cd /var/www/pterodactyl || exit
-    php artisan view:clear
-    php artisan config:clear
-    php artisan up
-    systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null
-    systemctl restart nginx
-    echo -e "${GREEN}[DONE]${NC} Theme uninstalled."
-    exit 0
-fi
-
-# Install Theme
-read -p "Enter image URL for background: " bg_url
-if [[ -z "$bg_url" ]]; then
-    echo -e "${RED}[ERROR]${NC} No image URL provided."
-    exit 1
-fi
-
-echo -e "${CYAN}[INFO]${NC} Downloading background..."
-mkdir -p /var/www/pterodactyl/public/assets/img
-wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-
-if [[ $? -ne 0 ]]; then
-    echo -e "${RED}[ERROR]${NC} Failed to download image."
-    exit 1
-fi
-chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-
-echo -e "${CYAN}[INFO]${NC} Writing custom CSS..."
-cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
-body {
-    background-image: url('/assets/img/custom_bg.jpg');
-    background-size: cover;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-    background-position: center;
-}
-EOF
-
-echo -e "${CYAN}[INFO]${NC} Backing up wrapper.blade.php..."
-cp /var/www/pterodactyl/resources/views/templates/wrapper.blade.php \
-   /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php
-
-echo -e "${CYAN}[INFO]${NC} Updating wrapper to inject theme..."
-
-cat <<'EOW' > /var/www/pterodactyl/resources/views/templates/wrapper.blade.php
-@extends('templates.base.core')
-
-@section('content')
-    <link rel="stylesheet" href="/assets/custom-background.css">
-
-    @yield('above-container')
-    @yield('container')
-    @yield('below-container')
-
-    <footer style="text-align:center; padding:1em; font-size: 0.9em; color:#ccc;">
-        All rights reserved by Golden Hosting Enterprise © 2025
-    </footer>
-@endsection
-EOW
+if [[ "$option" == "2" ]]; then if [[ -f /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php ]]; then cp /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php 
+/var/www/pterodactyl/resources/views/templates/wrapper.blade.php echo -e "${GREEN}[RESTORED]${NC} wrapper.blade.php has been restored." else echo -e "${RED}[ERROR]${NC} No backup found." exit 1 fi
 
 cd /var/www/pterodactyl || exit
 php artisan view:clear
 php artisan config:clear
 php artisan up
-
 systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null
 systemctl restart nginx
+echo -e "${GREEN}[DONE]${NC} Theme uninstalled."
+exit 0
 
-echo -e "${GREEN}[DONE]${NC} Theme installed successfully."
+fi
+
+Install Theme
+
+read -p "Enter image URL for background: " bg_url if [[ -z "$bg_url" ]]; then echo -e "${RED}[ERROR]${NC} No image URL provided." exit 1 fi
+
+echo -e "${CYAN}[INFO]${NC} Downloading background..." mkdir -p /var/www/pterodactyl/public/assets/img wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+
+if [[ $? -ne 0 ]]; then echo -e "${RED}[ERROR]${NC} Failed to download image." exit 1 fi chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+
+echo -e "${CYAN}[INFO]${NC} Writing custom CSS..." cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css body { background-image: url('/assets/img/custom_bg.jpg'); background-size: cover; background-repeat: no-repeat; background-attachment: fixed; background-position: center; } EOF
+
+echo -e "${CYAN}[INFO]${NC} Backing up wrapper.blade.php..." cp /var/www/pterodactyl/resources/views/templates/wrapper.blade.php 
+/var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php
+
+echo -e "${CYAN}[INFO]${NC} Updating wrapper to inject theme..." cat <<'EOW' > /var/www/pterodactyl/resources/views/templates/wrapper.blade.php @extends('templates.base.core')
+
+@section('content') <link rel="stylesheet" href="/assets/custom-background.css">
+
+@yield('above-container')
+@yield('container')
+@yield('below-container')
+
+<footer style="text-align:center; padding:1em; font-size:0.9em; color:#ccc;">
+    All rights reserved by Golden Hosting Enterprise © 2025
+</footer>
+
+@endsection EOW
+
+cd /var/www/pterodactyl || exit php artisan view:clear php artisan config:clear php artisan up
+
+systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null systemctl restart nginx
+
+echo -e "\n${GREEN}[DONE]${NC} Theme installed successfully and panel is intact."
+
