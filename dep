@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# ╔══════════════════════════════════════════════╗
+# ║  Golden Hosting Enterprise™ Theme Deployer  ║
+# ╚══════════════════════════════════════════════╝
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[1;34m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+echo -e "${YELLOW}"
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║ Welcome to Golden Hosting Enterprise Custom Deployer 🎉  ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+IMAGE_URL="$1"
+IMAGE_NAME="custom_bg.jpg"
+DEST_PATH="/var/www/pterodactyl/public/assets/img/$IMAGE_NAME"
+
+if [ -z "$IMAGE_URL" ]; then
+    echo -e "${RED}[✘] ERROR: Please provide an image URL.${NC}"
+    echo -e "${YELLOW}Usage:${NC} bash <(curl -s https://.../deploy_theme.sh) IMAGE_URL"
+    exit 1
+fi
+
+echo -e "${BLUE}[~] Downloading background image from:${NC} $IMAGE_URL"
+mkdir -p /var/www/pterodactyl/public/assets/img/
+curl -L "$IMAGE_URL" -o "$DEST_PATH"
+
+if [ ! -f "$DEST_PATH" ]; then
+    echo -e "${RED}[✘] Failed to download image. Exiting.${NC}"
+    exit 1
+fi
+
+echo -e "${YELLOW}[•] Installing NookTheme...${NC}"
+cd /var/www/pterodactyl || exit 1
+php artisan down
+
+curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
+chmod -R 755 storage/* bootstrap/cache
+composer install --no-dev --optimize-autoloader
+php artisan view:clear
+php artisan config:clear
+php artisan migrate --seed --force
+php artisan queue:restart
+
+echo -e "${BLUE}[✓] Theme files applied. Injecting background CSS...${NC}"
+mkdir -p public/assets/
+cat <<EOF > public/assets/custom-background.css
+body {
+  background: url('/assets/img/$IMAGE_NAME') no-repeat center center fixed;
+  background-size: cover;
+  background-color: #000;
+}
+body::before {
+  content: "";
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.4);
+  z-index: -1;
+}
+EOF
+
+LAYOUT="resources/views/templates/wrapper.blade.php"
+
+if ! grep -q "custom-background.css" "$LAYOUT"; then
+    echo -e "${GREEN}[+] Linking background CSS into layout...${NC}"
+    sed -i "/@include('layouts.scripts')/a <link rel=\"stylesheet\" href=\"/assets/custom-background.css\">" "$LAYOUT"
+fi
+
+if ! grep -q "Golden Hosting Enterprise" "$LAYOUT"; then
+    echo -e "${GREEN}[+] Injecting Golden Hosting branding footer...${NC}"
+    sed -i '/<\/body>/i \
+<footer style="text-align:center; padding:1em; font-size: 0.9em; color:#ccc;">\
+All rights reserved by Golden Hosting Enterprise © 2025\
+</footer>' "$LAYOUT"
+fi
+
+php artisan up
+
+echo -e "${GREEN}🎉 Deployment Complete!${NC}"
+echo -e "${BLUE}✔️ NookTheme installed"
+echo -e "✔️ Background set to: ${IMAGE_URL}"
+echo -e "✔️ Branded footer applied"
+echo -e "✔️ Panel is back online${NC}"
