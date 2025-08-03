@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # Golden Hosting Enterprise - Custom Theme Toolkit (Safe Mode)
-# Fully featured: install/uninstall theme, colorful output, safe Laravel-compliant layout
 
 # Colors
 RED='\033[0;31m'
@@ -16,7 +15,6 @@ echo -e " Golden Hosting Enterprise - Theme Deployer"
 echo -e "==================================================${NC}"
 echo
 
-# Prompt install or uninstall
 echo -e "${YELLOW}[1]${NC} Install Theme"
 echo -e "${YELLOW}[2]${NC} Uninstall Theme (Restore Backup)"
 read -p "Select an option [1-2]: " option
@@ -25,9 +23,9 @@ if [[ "$option" == "2" ]]; then
     if [[ -f /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php ]]; then
         cp /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php \
            /var/www/pterodactyl/resources/views/templates/wrapper.blade.php
-        echo -e "${GREEN}[RESTORED]${NC} wrapper.blade.php has been restored from backup."
+        echo -e "${GREEN}[RESTORED]${NC} wrapper.blade.php has been restored."
     else
-        echo -e "${RED}[ERROR]${NC} No backup found. Cannot restore."
+        echo -e "${RED}[ERROR]${NC} No backup found."
         exit 1
     fi
 
@@ -41,14 +39,14 @@ if [[ "$option" == "2" ]]; then
     exit 0
 fi
 
-# INSTALL FLOW
-read -p "Enter direct image URL for background: " bg_url
+# Install Theme
+read -p "Enter image URL for background: " bg_url
 if [[ -z "$bg_url" ]]; then
-    echo -e "${RED}[ERROR]${NC} No image URL provided. Exiting."
+    echo -e "${RED}[ERROR]${NC} No image URL provided."
     exit 1
 fi
 
-echo -e "${CYAN}[INFO]${NC} Downloading background image..."
+echo -e "${CYAN}[INFO]${NC} Downloading background..."
 mkdir -p /var/www/pterodactyl/public/assets/img
 wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
 
@@ -56,10 +54,9 @@ if [[ $? -ne 0 ]]; then
     echo -e "${RED}[ERROR]${NC} Failed to download image."
     exit 1
 fi
-
 chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
 
-echo -e "${CYAN}[INFO]${NC} Writing custom background CSS..."
+echo -e "${CYAN}[INFO]${NC} Writing custom CSS..."
 cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
 body {
     background-image: url('/assets/img/custom_bg.jpg');
@@ -74,7 +71,8 @@ echo -e "${CYAN}[INFO]${NC} Backing up wrapper.blade.php..."
 cp /var/www/pterodactyl/resources/views/templates/wrapper.blade.php \
    /var/www/pterodactyl/resources/views/templates/wrapper.backup.blade.php
 
-echo -e "${CYAN}[INFO]${NC} Writing theme wrapper..."
+echo -e "${CYAN}[INFO]${NC} Updating wrapper to inject theme..."
+
 cat <<'EOW' > /var/www/pterodactyl/resources/views/templates/wrapper.blade.php
 @extends('templates.base.core')
 
@@ -99,4 +97,4 @@ php artisan up
 systemctl restart php8.3-fpm 2>/dev/null || systemctl restart php8.2-fpm 2>/dev/null
 systemctl restart nginx
 
-echo -e "\n${GREEN}[DONE]${NC} Theme installed successfully."
+echo -e "${GREEN}[DONE]${NC} Theme installed successfully."
