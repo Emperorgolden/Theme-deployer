@@ -22,7 +22,7 @@ DEST_PATH="/var/www/pterodactyl/public/assets/img/$IMAGE_NAME"
 
 if [ -z "$IMAGE_URL" ]; then
     echo -e "${RED}[✘] ERROR: Please provide an image URL.${NC}"
-    echo -e "${YELLOW}Usage:${NC} bash <(curl -s https://.../deploy_theme.sh) IMAGE_URL"
+    echo -e "${YELLOW}Usage:${NC} bash <(curl -s https://raw.githubusercontent.com/Emperorgolden/Theme-deployer/refs/heads/main/dep) IMAGE_URL"
     exit 1
 fi
 
