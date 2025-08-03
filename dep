@@ -12,19 +12,35 @@ NC='\033[0m'
 
 echo -e "${YELLOW}"
 echo "╔═══════════════════════════════════════════════════════════╗"
-echo "║ Welcome to Golden Hosting Enterprise Custom Deployer 🎉  ║"
+echo "║ Welcome to Golden Hosting Enterprise Theme Manager 🎨    ║"
 echo "╚═══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
-IMAGE_URL="$1"
+echo -e "${BLUE}[?] Do you want to install or uninstall the theme?${NC}"
+echo "1) Install"
+echo "2) Uninstall"
+read -p "👉 Enter choice (1 or 2): " CHOICE
+
+if [ "$CHOICE" == "2" ]; then
+    echo -e "${YELLOW}[•] Reverting theme...${NC}"
+    cd /var/www/pterodactyl || exit 1
+    php artisan down
+
+    echo -e "${BLUE}[~] Restoring original panel files from GitHub..."
+    curl -L https://github.com/pterodactyl/panel/releases/latest/download/panel.tar.gz | tar -xzv
+
+    php artisan view:clear
+    php artisan config:clear
+    php artisan migrate --seed --force
+    php artisan up
+
+    echo -e "${GREEN}✅ Theme uninstalled. Panel restored to default.${NC}"
+    exit 0
+fi
+
+read -p "🌄 Enter your background image URL: " IMAGE_URL
 IMAGE_NAME="custom_bg.jpg"
 DEST_PATH="/var/www/pterodactyl/public/assets/img/$IMAGE_NAME"
-
-if [ -z "$IMAGE_URL" ]; then
-    echo -e "${RED}[✘] ERROR: Please provide an image URL.${NC}"
-    echo -e "${YELLOW}Usage:${NC} bash <(curl -s https://raw.githubusercontent.com/Emperorgolden/Theme-deployer/refs/heads/main/dep) IMAGE_URL"
-    exit 1
-fi
 
 echo -e "${BLUE}[~] Downloading background image from:${NC} $IMAGE_URL"
 mkdir -p /var/www/pterodactyl/public/assets/img/
@@ -47,7 +63,7 @@ php artisan config:clear
 php artisan migrate --seed --force
 php artisan queue:restart
 
-echo -e "${BLUE}[✓] Theme files applied. Injecting background CSS...${NC}"
+echo -e "${BLUE}[✓] Injecting background CSS...${NC}"
 mkdir -p public/assets/
 cat <<EOF > public/assets/custom-background.css
 body {
@@ -58,7 +74,8 @@ body {
 body::before {
   content: "";
   position: fixed;
-  top: 0; left: 0;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   background: rgba(0,0,0,0.4);
@@ -69,12 +86,10 @@ EOF
 LAYOUT="resources/views/templates/wrapper.blade.php"
 
 if ! grep -q "custom-background.css" "$LAYOUT"; then
-    echo -e "${GREEN}[+] Linking background CSS into layout...${NC}"
     sed -i "/@include('layouts.scripts')/a <link rel=\"stylesheet\" href=\"/assets/custom-background.css\">" "$LAYOUT"
 fi
 
 if ! grep -q "Golden Hosting Enterprise" "$LAYOUT"; then
-    echo -e "${GREEN}[+] Injecting Golden Hosting branding footer...${NC}"
     sed -i '/<\/body>/i \
 <footer style="text-align:center; padding:1em; font-size: 0.9em; color:#ccc;">\
 All rights reserved by Golden Hosting Enterprise © 2025\
@@ -83,8 +98,7 @@ fi
 
 php artisan up
 
-echo -e "${GREEN}🎉 Deployment Complete!${NC}"
-echo -e "${BLUE}✔️ NookTheme installed"
-echo -e "✔️ Background set to: ${IMAGE_URL}"
-echo -e "✔️ Branded footer applied"
-echo -e "✔️ Panel is back online${NC}"
+echo -e "${GREEN}🎉 Theme Installed Successfully!${NC}"
+echo -e "${BLUE}✔️ Background: $IMAGE_URL"
+echo -e "✔️ Footer: Golden Hosting Enterprise"
+echo -e "✔️ NookTheme applied"
