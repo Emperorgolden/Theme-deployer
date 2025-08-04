@@ -1,17 +1,12 @@
 #!/bin/bash
+#!/bin/bash
 
-Golden Hosting Enterprise - Theme Toolkit
-
------------------------------------------
-
-Includes:
-
-1. Add background to default panel theme
-
-2. Install NookTheme and apply background
-
-3. Uninstall Theme and restore backup
-
+# Golden Hosting Enterprise - Theme Toolkit
+# -----------------------------------------
+# Includes:
+# 1. Add background to default panel theme
+# 2. Install NookTheme and apply background
+# 3. Uninstall Theme and restore backup
 set -e
 
 === COLORS ===
