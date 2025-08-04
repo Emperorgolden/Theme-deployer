@@ -1,98 +1,151 @@
 #!/bin/bash
-#!/bin/bash
 
 # Golden Hosting Enterprise - Theme Toolkit
-# -----------------------------------------
 # Includes:
 # 1. Add background to default panel theme
 # 2. Install NookTheme and apply background
 # 3. Uninstall Theme and restore backup
+
 set -e
 
-=== COLORS ===
+# === COLORS ===
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-RED='\033[0;31m' GREEN='\033[0;32m' YELLOW='\033[1;33m' CYAN='\033[0;36m' NC='\033[0m'
+clear
+echo -e "${CYAN}=============================================="
+echo -e " Golden Hosting Enterprise - Theme Deployer"
+echo -e "==============================================${NC}"
+echo
 
-clear echo -e "${CYAN}==============================================" echo -e " Golden Hosting Enterprise - Theme Deployer" echo -e "==============================================${NC}" echo
+echo -e "${YELLOW}[1]${NC} Add background to default theme"
+echo -e "${YELLOW}[2]${NC} Install NookTheme + background"
+echo -e "${YELLOW}[3]${NC} Uninstall Theme / Restore backup"
+read -p "Choose [1-3]: " option
 
-echo -e "${YELLOW}[1]${NC} Add background to default theme" echo -e "${YELLOW}[2]${NC} Install NookTheme + background" echo -e "${YELLOW}[3]${NC} Uninstall Theme / Restore backup" read -p "Choose [1-3]: " option
+if [[ "$option" == "3" ]]; then
+  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+  BACKUP="$WRAPPER.bak"
+  if [[ -f "$BACKUP" ]]; then
+    cp "$BACKUP" "$WRAPPER"
+    rm -f /var/www/pterodactyl/public/assets/custom-background.css
+    rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    php /var/www/pterodactyl/artisan view:clear
+    php /var/www/pterodactyl/artisan config:clear
+    php /var/www/pterodactyl/artisan up
+    systemctl restart nginx
+    echo -e "${GREEN}✅ Backup restored. Theme reverted.${NC}"
+  else
+    echo -e "${RED}No backup found. Cannot restore.${NC}"
+  fi
+  exit
+fi
 
-if [[ "$option" == "3" ]]; then WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php" BACKUP="$WRAPPER.bak" if [[ -f "$BACKUP" ]]; then cp "$BACKUP" "$WRAPPER" rm -f /var/www/pterodactyl/public/assets/custom-background.css rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg php /var/www/pterodactyl/artisan view:clear php /var/www/pterodactyl/artisan config:clear php /var/www/pterodactyl/artisan up systemctl restart nginx echo -e "${GREEN}✅ Backup restored. Theme reverted.${NC}" else echo -e "${RED}No backup found. Cannot restore.${NC}" fi exit fi
+read -p "Paste direct image URL for background: " bg_url
+if [[ -z "$bg_url" ]]; then
+    echo -e "${RED}[ERROR] No image URL provided. Exiting.${NC}"
+    exit 1
+fi
 
-read -p "Paste direct image URL for background: " bg_url if [[ -z "$bg_url" ]]; then echo -e "${RED}[ERROR] No image URL provided. Exiting.${NC}" exit 1 fi
+mkdir -p /var/www/pterodactyl/public/assets/img
+wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
 
-Set up background image
+cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
+body {
+  background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
+  background-size: cover;
+}
+EOF
 
-mkdir -p /var/www/pterodactyl/public/assets/img wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+if [[ "$option" == "1" ]]; then
+  echo -e "${CYAN}Injecting background into default theme...${NC}"
+  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+  BACKUP="$WRAPPER.bak"
+  [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
 
-Write CSS
-
-cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css body { background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed; background-size: cover; } EOF
-
-if [[ "$option" == "1" ]]; then echo -e "${CYAN}Modifying wrapper.blade.php to inject background...${NC}" WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php" BACKUP="$WRAPPER.bak" [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
-
-cat <<'EOW' > "$WRAPPER"
-
-<!DOCTYPE html><html>
+  cat <<'EOW' > "$WRAPPER"
+<!DOCTYPE html>
+<html>
     <head>
-        <title>{{ config('app.name', 'Pterodactyl') }}</title>@section('meta')
-        <meta charset="utf-8">
-        <meta http-equiv="X-UA-Compatible" content="IE=edge">
-        <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
-        <meta name="csrf-token" content="{{ csrf_token() }}">
-        <meta name="robots" content="noindex">
-        <link rel="apple-touch-icon" sizes="180x180" href="/favicons/apple-touch-icon.png">
-        <link rel="icon" type="image/png" href="/favicons/favicon-32x32.png" sizes="32x32">
-        <link rel="icon" type="image/png" href="/favicons/favicon-16x16.png" sizes="16x16">
-        <link rel="manifest" href="/favicons/manifest.json">
-        <link rel="mask-icon" href="/favicons/safari-pinned-tab.svg" color="#bc6e3c">
-        <link rel="shortcut icon" href="/favicons/favicon.ico">
-        <meta name="msapplication-config" content="/favicons/browserconfig.xml">
-        <meta name="theme-color" content="#0e4688">
-    @show
+        <title>{{ config('app.name', 'Pterodactyl') }}</title>
 
-    @section('user-data')
-        @if(!is_null(Auth::user()))
-            <script>
-                window.PterodactylUser = {!! json_encode(Auth::user()->toVueObject()) !!};
-            </script>
-        @endif
-        @if(!empty($siteConfiguration))
-            <script>
-                window.SiteConfiguration = {!! json_encode($siteConfiguration) !!};
-            </script>
-        @endif
-    @show
+        @section('meta')
+            <meta charset="utf-8">
+            <meta http-equiv="X-UA-Compatible" content="IE=edge">
+            <meta content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" name="viewport">
+            <meta name="csrf-token" content="{{ csrf_token() }}">
+            <meta name="robots" content="noindex">
+            <link rel="apple-touch-icon" sizes="180x180" href="/favicons/apple-touch-icon.png">
+            <link rel="icon" type="image/png" href="/favicons/favicon-32x32.png" sizes="32x32">
+            <link rel="icon" type="image/png" href="/favicons/favicon-16x16.png" sizes="16x16">
+            <link rel="manifest" href="/favicons/manifest.json">
+            <link rel="mask-icon" href="/favicons/safari-pinned-tab.svg" color="#bc6e3c">
+            <link rel="shortcut icon" href="/favicons/favicon.ico">
+            <meta name="msapplication-config" content="/favicons/browserconfig.xml">
+            <meta name="theme-color" content="#0e4688">
+        @show
 
-    <style>
-        @import url('//fonts.googleapis.com/css?family=Rubik:300,400,500&display=swap');
-        @import url('//fonts.googleapis.com/css?family=IBM+Plex+Mono|IBM+Plex+Sans:500&display=swap');
-    </style>
+        @section('user-data')
+            @if(!is_null(Auth::user()))
+                <script>
+                    window.PterodactylUser = {!! json_encode(Auth::user()->toVueObject()) !!};
+                </script>
+            @endif
+            @if(!empty($siteConfiguration))
+                <script>
+                    window.SiteConfiguration = {!! json_encode($siteConfiguration) !!};
+                </script>
+            @endif
+        @show
 
-    @yield('assets')
-    @include('layouts.scripts')
-    <link rel="stylesheet" href="/assets/custom-background.css">
-</head>
-<body class="{{ $css['body'] ?? 'bg-neutral-50' }}">
-    @section('content')
-        @yield('above-container')
-        @yield('container')
-        @yield('below-container')
-        <footer style="text-align:center; padding:1em; font-size: 0.9em; color:#ccc;">
-            All rights reserved by Golden Hosting Enterprise © 2025
-        </footer>
-    @show
-    @section('scripts')
-        {!! $asset->js('main.js') !!}
-    @show
-</body>
+        <style>
+            @import url('//fonts.googleapis.com/css?family=Rubik:300,400,500&display=swap');
+            @import url('//fonts.googleapis.com/css?family=IBM+Plex+Mono|IBM+Plex+Sans:500&display=swap');
+        </style>
 
+        @yield('assets')
+        @include('layouts.scripts')
+        <link rel="stylesheet" href="/assets/custom-background.css">
+    </head>
+    <body class="{{ $css['body'] ?? 'bg-neutral-50' }}">
+        @section('content')
+            @yield('above-container')
+            @yield('container')
+            @yield('below-container')
+            <footer style="text-align:center; padding:1em; font-size: 0.9em; color:#ccc;">
+                All rights reserved by Golden Hosting Enterprise © 2025
+            </footer>
+        @show
+        @section('scripts')
+            {!! $asset->js('main.js') !!}
+        @show
+    </body>
 </html>
-EOWelse echo -e "${CYAN}Installing NookTheme...${NC}" cd /var/www/pterodactyl php artisan down curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv chmod -R 755 storage/* bootstrap/cache composer install --no-dev --optimize-autoloader php artisan migrate --seed --force php artisan view:clear php artisan config:clear php artisan queue:restart php artisan up chown -R www-data:www-data . fi
+EOW
 
-Final cache clear
+else
+  echo -e "${CYAN}Installing NookTheme...${NC}"
+  cd /var/www/pterodactyl
+  php artisan down
+  curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
+  chmod -R 755 storage/* bootstrap/cache
+  composer install --no-dev --optimize-autoloader
+  php artisan migrate --seed --force
+  php artisan view:clear
+  php artisan config:clear
+  php artisan queue:restart
+  php artisan up
+  chown -R www-data:www-data .
+fi
 
-cd /var/www/pterodactyl php artisan view:clear php artisan config:clear php artisan up systemctl restart nginx
+cd /var/www/pterodactyl
+php artisan view:clear
+php artisan config:clear
+php artisan up
+systemctl restart nginx
 
 echo -e "${GREEN}✅ Theme deployment complete.${NC}"
-
