@@ -2,13 +2,15 @@
 
 Golden Hosting Enterprise - Theme Toolkit
 
+-----------------------------------------
+
 Includes:
 
-1. Apply background to default panel theme
+1. Add background to default panel theme
 
-2. Install NookTheme + background
+2. Install NookTheme and apply background
 
-3. Uninstall and restore previous state
+3. Uninstall Theme and restore backup
 
 set -e
 
