@@ -1,7 +1,8 @@
 #!/bin/bash
 # ============================================================
-# Golden Hosting Enterprise - VPS Mini Cleaner (Safe for Pterodactyl)
+# Golden Hosting Enterprise - Safe VPS Cleaner
 # Unauthorized use, resale, or redistribution is prohibited.
+# Designed to keep Pterodactyl panels safe
 # ============================================================
 
 set -e
@@ -16,7 +17,11 @@ NC='\033[0m'
 
 SERVICE_NAME="golden-cleaner"
 INSTALL_DIR="/opt/$SERVICE_NAME"
-LOG_FILE="/var/log/golden-cleaner.log"
+LOG_FILE="/var/log/$SERVICE_NAME.log"
+DRY_RUN=false   # Set true to simulate cleanup without deleting
+
+# === PROTECTED SERVERS ===
+PROTECTED_KEYWORDS=("pterodactyl" "important" "protected")
 
 # === BANNER ===
 banner() {
@@ -37,7 +42,7 @@ EOF
     echo
 }
 
-# === MENU ===
+# === MAIN MENU ===
 menu() {
     banner
     echo -e "${YELLOW}[1]${NC} Install & Start Cleaner"
@@ -51,63 +56,85 @@ menu() {
     read -p "Choose an option [0-6]: " option
 }
 
-# === CLEANER LOGIC ===
-create_cleaner() {
-mkdir -p $INSTALL_DIR
-cat <<'EOF' > $INSTALL_DIR/golden-cleaner.sh
-#!/bin/bash
-LOG_FILE="/var/log/golden-cleaner.log"
-while true; do
-  echo "============================================================" | tee -a $LOG_FILE
-  echo " Golden Hosting Enterprise - VPS Cleaner Running..." | tee -a $LOG_FILE
-  echo " Unauthorized resale/use is strictly prohibited." | tee -a $LOG_FILE
-  echo " Run started at: $(date)" | tee -a $LOG_FILE
-  echo "============================================================" | tee -a $LOG_FILE
-
-  before=$(df --output=avail / | tail -1)
-
-  # === Safe Docker Cleanup ===
-  echo "Cleaning Docker safely..." | tee -a $LOG_FILE
-  docker image prune -f >> $LOG_FILE 2>&1
-  docker container prune -f >> $LOG_FILE 2>&1
-  # DO NOT prune networks or volumes used by Pterodactyl
-
-  # === System Cleanup ===
-  echo "Cleaning system logs and cache..." | tee -a $LOG_FILE
-  journalctl --vacuum-time=7d >> $LOG_FILE 2>&1
-  apt-get autoremove -y >> $LOG_FILE 2>&1
-  apt-get autoclean -y >> $LOG_FILE 2>&1
-  find /tmp -type f -atime +7 -print -delete >> $LOG_FILE 2>&1
-  find /var/tmp -type f -atime +7 -print -delete >> $LOG_FILE 2>&1
-
-  after=$(df --output=avail / | tail -1)
-  diff=$((after - before))
-
-  if [ $diff -gt 1048576 ]; then
-    freed=$(echo "scale=2; $diff/1048576" | bc)
-    unit="GB"
-  else
-    freed=$(echo "$diff/1024" | bc)
-    unit="MB"
-  fi
-
-  echo " Cleanup complete. Freed: ${freed} ${unit}" | tee -a $LOG_FILE
-  echo " Next run: in 24 hours." | tee -a $LOG_FILE
-  echo "============================================================" | tee -a $LOG_FILE
-
-  sleep 24h
-done
-EOF
-
-chmod +x $INSTALL_DIR/golden-cleaner.sh
+# === SAFETY FUNCTIONS ===
+is_protected() {
+    local name="$1"
+    for kw in "${PROTECTED_KEYWORDS[@]}"; do
+        if [[ "$name" == *"$kw"* ]]; then
+            return 0  # protected
+        fi
+    done
+    return 1  # safe
 }
 
-# === ACTIONS ===
+safe_delete() {
+    local name="$1"
+    if is_protected "$name"; then
+        echo "Skipping protected item: $name" | tee -a $LOG_FILE
+    else
+        if [ "$DRY_RUN" = true ]; then
+            echo "[Dry-Run] Would delete: $name" | tee -a $LOG_FILE
+        else
+            echo "Deleting: $name" | tee -a $LOG_FILE
+            rm -rf "$name" >/dev/null 2>&1 || true
+        fi
+    fi
+}
+
+# === CLEANUP FUNCTION ===
+cleanup_loop() {
+    while true; do
+        echo "============================================================" | tee -a $LOG_FILE
+        echo " Golden Hosting Enterprise - VPS Cleaner Running..." | tee -a $LOG_FILE
+        echo " Run started at: $(date)" | tee -a $LOG_FILE
+        echo "============================================================" | tee -a $LOG_FILE
+
+        before=$(df --output=avail / | tail -1)
+
+        # Safe Docker Cleanup
+        echo "Cleaning Docker safely..." | tee -a $LOG_FILE
+        docker image prune -f >>$LOG_FILE 2>&1 || true
+        docker container prune -f >>$LOG_FILE 2>&1 || true
+        # DO NOT prune Pterodactyl networks or volumes
+
+        # System Cleanup
+        echo "Cleaning logs and cache..." | tee -a $LOG_FILE
+        journalctl --vacuum-time=7d >>$LOG_FILE 2>&1 || true
+        apt-get autoremove -y >>$LOG_FILE 2>&1 || true
+        apt-get autoclean -y >>$LOG_FILE 2>&1 || true
+        find /tmp -type f -atime +7 -print -delete >>$LOG_FILE 2>&1 || true
+        find /var/tmp -type f -atime +7 -print -delete >>$LOG_FILE 2>&1 || true
+
+        after=$(df --output=avail / | tail -1)
+        diff=$((after - before))
+
+        if [ $diff -gt 1048576 ]; then
+            freed=$(echo "scale=2; $diff/1048576" | bc)
+            unit="GB"
+        else
+            freed=$(echo "$diff/1024" | bc)
+            unit="MB"
+        fi
+
+        echo " Cleanup complete. Freed: ${freed} ${unit}" | tee -a $LOG_FILE
+        echo " Next run: in 24 hours." | tee -a $LOG_FILE
+        echo "============================================================" | tee -a $LOG_FILE
+
+        sleep 24h
+    done
+}
+
+# === MENU ACTIONS ===
 install_and_start() {
     echo -e "${CYAN}Installing Golden Cleaner...${NC}"
-    create_cleaner
+    mkdir -p $INSTALL_DIR
+    cat <<'EOF' > $INSTALL_DIR/golden-cleaner.sh
+#!/bin/bash
+source /opt/golden-cleaner/golden-cleaner.sh && cleanup_loop
+EOF
+    chmod +x $INSTALL_DIR/golden-cleaner.sh
 
-    # systemd service
+    # Create systemd service
     cat <<EOF > /etc/systemd/system/$SERVICE_NAME.service
 [Unit]
 Description=Golden Hosting Enterprise VPS Cleaner
@@ -159,14 +186,14 @@ uninstall_cleaner() {
 while true; do
     menu
     case $option in
-      1) install_and_start ;;
-      2) stop_cleaner ;;
-      3) force_stop_cleaner ;;
-      4) restart_cleaner ;;
-      5) status_cleaner ;;
-      6) uninstall_cleaner ;;
-      0) echo "Exiting... Stay Golden."; exit ;;
-      *) echo -e "${RED}Invalid option${NC}" ;;
+        1) install_and_start ;;
+        2) stop_cleaner ;;
+        3) force_stop_cleaner ;;
+        4) restart_cleaner ;;
+        5) status_cleaner ;;
+        6) uninstall_cleaner ;;
+        0) echo "Exiting... Stay Golden."; exit ;;
+        *) echo -e "${RED}Invalid option${NC}" ;;
     esac
     echo
     read -p "Press Enter to continue..." temp
