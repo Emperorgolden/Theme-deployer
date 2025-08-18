@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# Golden Hosting Enterprise - Theme Toolkit (Final Mega Edition)
-# Fully automated, interactive, handles Nightcore & Nebula with background support
+# Golden Hosting Enterprise - Theme Toolkit (Fully Automated with Conflict Detection)
+# 1. Add background to default panel theme
+# 2. Install NookTheme + background
+# 3. Install / Update Nightcore + background (auto)
+# 4. Install / Update Nebula + background (auto)
+# 5. Uninstall Theme / Restore backup
 
 set -e
 
@@ -20,24 +24,22 @@ echo
 
 echo -e "${YELLOW}[1]${NC} Add background to default theme"
 echo -e "${YELLOW}[2]${NC} Install NookTheme + background"
-echo -e "${YELLOW}[3]${NC} Install / Update Nightcore + background"
-echo -e "${YELLOW}[4]${NC} Install / Update Nebula + background"
+echo -e "${YELLOW}[3]${NC} Install / Update Nightcore + background (Auto)"
+echo -e "${YELLOW}[4]${NC} Install / Update Nebula + background (Auto)"
 echo -e "${YELLOW}[5]${NC} Uninstall Theme / Restore backup"
 read -p "Choose [1-5]: " option
 
-# Paths
-WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-BACKUP="$WRAPPER.bak"
-IMG_DIR="/var/www/pterodactyl/public/assets/img"
-CSS_FILE="/var/www/pterodactyl/public/assets/custom-background.css"
-NIGHTCORE_FLAG="/var/www/pterodactyl/public/assets/nightcore-installed.flag"
-NEBULA_FLAG="/var/www/pterodactyl/public/assets/nebula-installed.flag"
-
 # === Uninstall ===
 if [[ "$option" == "5" ]]; then
+    WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+    BACKUP="$WRAPPER.bak"
     if [[ -f "$BACKUP" ]]; then
         cp "$BACKUP" "$WRAPPER"
-        rm -f "$CSS_FILE" "$IMG_DIR/custom_bg.jpg" "$NIGHTCORE_FLAG" "$NEBULA_FLAG"
+        rm -f /var/www/pterodactyl/public/assets/custom-background.css
+        rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+        rm -f /var/www/pterodactyl/public/assets/nightcore-installed.flag
+        rm -f /var/www/pterodactyl/public/assets/nebula-installed.flag
+        rm -f /var/www/pterodactyl/public/assets/nooktheme-installed.flag
         php /var/www/pterodactyl/artisan view:clear
         php /var/www/pterodactyl/artisan config:clear
         php /var/www/pterodactyl/artisan up
@@ -49,14 +51,15 @@ if [[ "$option" == "5" ]]; then
     exit
 fi
 
-# === Ask for background URL ===
+# === Ask for background image ===
 read -p "Paste direct image URL for background (or leave empty to skip): " bg_url
 if [[ -n "$bg_url" ]]; then
-    mkdir -p "$IMG_DIR"
-    wget -q "$bg_url" -O "$IMG_DIR/custom_bg.jpg"
-    chmod 644 "$IMG_DIR/custom_bg.jpg"
+    mkdir -p /var/www/pterodactyl/public/assets/img
+    wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
 
-    cat <<EOF > "$CSS_FILE"
+    # === CSS ===
+    cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
 body {
   background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
   background-size: cover;
@@ -66,6 +69,8 @@ fi
 
 # === Template Injector ===
 inject_wrapper() {
+    WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+    BACKUP="$WRAPPER.bak"
     [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
 
     cat <<'EOW' > "$WRAPPER"
@@ -86,6 +91,7 @@ inject_wrapper() {
             <link rel="mask-icon" href="/favicons/safari-pinned-tab.svg" color="#bc6e3c">
             <link rel="shortcut icon" href="/favicons/favicon.ico">
             <meta name="msapplication-config" content="/favicons/browserconfig.xml">
+            <meta name="theme-color" content="#0e4688">
         @show
 
         @section('user-data')
@@ -129,73 +135,57 @@ inject_wrapper() {
 EOW
 }
 
-# === Ensure Pterodactyl maintenance mode ===
+# === Theme Conflict Detector ===
+detect_theme_conflict() {
+    if [[ -f /var/www/pterodactyl/public/assets/nightcore-installed.flag || \
+          -f /var/www/pterodactyl/public/assets/nebula-installed.flag || \
+          -f /var/www/pterodactyl/public/assets/nooktheme-installed.flag ]]; then
+        echo -e "${YELLOW}⚠️  Another theme is already installed!${NC}"
+        read -p "Do you want to continue and override it? [y/N]: " proceed
+        [[ ! "$proceed" =~ ^[Yy]$ ]] && { echo -e "${RED}Aborting installation.${NC}"; exit 1; }
+    fi
+}
+
 cd /var/www/pterodactyl
 php artisan down
 
-# === Theme Install/Update Logic ===
 case "$option" in
-1)
+  1)
     echo -e "${CYAN}Injecting background into default theme...${NC}"
     inject_wrapper
     ;;
 
-2)
-    # Install NookTheme
+  2)
+    detect_theme_conflict
     echo -e "${CYAN}Installing NookTheme...${NC}"
-    if [[ -f "$NIGHTCORE_FLAG" || -f "$NEBULA_FLAG" ]]; then
-        echo -e "${YELLOW}⚠ Another theme detected. Installing NookTheme may override it.${NC}"
-        read -p "Continue? [y/N]: " cont
-        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
-    fi
     curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
     chmod -R 755 storage/* bootstrap/cache
     composer install --no-dev --optimize-autoloader
     php artisan migrate --seed --force
     inject_wrapper
+    touch /var/www/pterodactyl/public/assets/nooktheme-installed.flag
     chown -R www-data:www-data .
     ;;
 
-3)
-    # Nightcore
-    if [[ -f "$NEBULA_FLAG" ]]; then
-        echo -e "${YELLOW}⚠ Nebula is installed. Installing Nightcore may conflict.${NC}"
-        read -p "Continue? [y/N]: " cont
-        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
-    fi
-    if [[ -f "$NIGHTCORE_FLAG" ]]; then
-        echo -e "${CYAN}Updating Nightcore...${NC}"
-        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) update
-    else
-        echo -e "${CYAN}Installing Nightcore...${NC}"
-        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh)
-        touch "$NIGHTCORE_FLAG"
-    fi
-    [[ -n "$bg_url" ]] && inject_wrapper
+  3)
+    detect_theme_conflict
+    echo -e "${CYAN}Installing / Updating Nightcore automatically (1C)...${NC}"
+    bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) 1C
+    touch /var/www/pterodactyl/public/assets/nightcore-installed.flag
+    inject_wrapper
     ;;
 
-4)
-    # Nebula
-    if [[ -f "$NIGHTCORE_FLAG" ]]; then
-        echo -e "${YELLOW}⚠ Nightcore is installed. Installing Nebula may conflict.${NC}"
-        read -p "Continue? [y/N]: " cont
-        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
-    fi
-    echo -e "${CYAN}Installing Nebula Plugin...${NC}"
+  4)
+    detect_theme_conflict
+    echo -e "${CYAN}Installing / Updating Nebula automatically (plugin + 2A)...${NC}"
     bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 11
-    echo -e "${CYAN}Installing/Updating Nebula Theme...${NC}"
     bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) 2A
-    touch "$NEBULA_FLAG"
-    [[ -n "$bg_url" ]] && inject_wrapper
+    touch /var/www/pterodactyl/public/assets/nebula-installed.flag
+    inject_wrapper
     ;;
 
-*)
-    echo -e "${RED}❌ Invalid option.${NC}"
-    exit 1
-    ;;
 esac
 
-# === Cleanup & restart ===
 php artisan view:clear
 php artisan config:clear
 php artisan up
