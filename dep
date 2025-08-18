@@ -1,9 +1,11 @@
 #!/bin/bash
 
-# Golden Hosting Enterprise - Theme Toolkit
+# Golden Hosting Enterprise - Theme Toolkit (Mega Edition)
 # 1. Add background to default panel theme
-# 2. Install NookTheme and apply background
-# 3. Uninstall Theme and restore backup
+# 2. Install NookTheme + background
+# 3. Install / Update Nightcore + background
+# 4. Install / Update Nebula + background
+# 5. Uninstall Theme / Restore backup
 
 set -e
 
@@ -22,46 +24,47 @@ echo
 
 echo -e "${YELLOW}[1]${NC} Add background to default theme"
 echo -e "${YELLOW}[2]${NC} Install NookTheme + background"
-echo -e "${YELLOW}[3]${NC} Uninstall Theme / Restore backup"
-read -p "Choose [1-3]: " option
+echo -e "${YELLOW}[3]${NC} Install / Update Nightcore + background"
+echo -e "${YELLOW}[4]${NC} Install / Update Nebula + background"
+echo -e "${YELLOW}[5]${NC} Uninstall Theme / Restore backup"
+read -p "Choose [1-5]: " option
 
 # === Uninstall ===
-if [[ "$option" == "3" ]]; then
+if [[ "$option" == "5" ]]; then
   WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
   BACKUP="$WRAPPER.bak"
   if [[ -f "$BACKUP" ]]; then
     cp "$BACKUP" "$WRAPPER"
     rm -f /var/www/pterodactyl/public/assets/custom-background.css
     rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    rm -f /var/www/pterodactyl/public/assets/nightcore-installed.flag
+    rm -f /var/www/pterodactyl/public/assets/nebula-installed.flag
     php /var/www/pterodactyl/artisan view:clear
     php /var/www/pterodactyl/artisan config:clear
     php /var/www/pterodactyl/artisan up
     systemctl restart nginx
-    echo -e "${GREEN}✅ Backup restored. Theme reverted.${NC}"
+    echo -e "${GREEN}✅ Backup restored. All themes reverted.${NC}"
   else
     echo -e "${RED}❌ No backup found. Cannot restore.${NC}"
   fi
   exit
 fi
 
-# === Ask for image ===
-read -p "Paste direct image URL for background: " bg_url
-if [[ -z "$bg_url" ]]; then
-    echo -e "${RED}[ERROR] No image URL provided. Exiting.${NC}"
-    exit 1
-fi
+# === Ask for background image ===
+read -p "Paste direct image URL for background (or leave empty to skip): " bg_url
+if [[ -n "$bg_url" ]]; then
+    mkdir -p /var/www/pterodactyl/public/assets/img
+    wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
 
-mkdir -p /var/www/pterodactyl/public/assets/img
-wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-
-# === CSS ===
-cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
+    # === CSS ===
+    cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
 body {
   background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
   background-size: cover;
 }
 EOF
+fi
 
 # === Template Injector ===
 inject_wrapper() {
@@ -74,7 +77,6 @@ inject_wrapper() {
 <html>
     <head>
         <title>{{ config('app.name', 'Pterodactyl') }}</title>
-
         @section('meta')
             <meta charset="utf-8">
             <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -111,7 +113,9 @@ inject_wrapper() {
 
         @yield('assets')
         @include('layouts.scripts')
+        @if(file_exists(public_path('assets/custom-background.css')))
         <link rel="stylesheet" href="/assets/custom-background.css">
+        @endif
     </head>
     <body class="{{ $css['body'] ?? 'bg-neutral-50' }}">
         @section('content')
@@ -130,27 +134,71 @@ inject_wrapper() {
 EOW
 }
 
-# === Apply background only ===
-if [[ "$option" == "1" ]]; then
-  echo -e "${CYAN}Injecting background into default theme...${NC}"
-  inject_wrapper
-else
-  echo -e "${CYAN}Installing NookTheme...${NC}"
-  cd /var/www/pterodactyl
-  php artisan down
-  curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
-  chmod -R 755 storage/* bootstrap/cache
-  composer install --no-dev --optimize-autoloader
-  php artisan migrate --seed --force
-  php artisan view:clear
-  php artisan config:clear
-  php artisan queue:restart
-  php artisan up
-  chown -R www-data:www-data .
-  inject_wrapper
-fi
-
+# === Apply selected option ===
 cd /var/www/pterodactyl
+php artisan down
+
+case "$option" in
+  1)
+    echo -e "${CYAN}Injecting background into default theme...${NC}"
+    inject_wrapper
+    ;;
+
+  2)
+    echo -e "${CYAN}Installing NookTheme...${NC}"
+    curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
+    chmod -R 755 storage/* bootstrap/cache
+    composer install --no-dev --optimize-autoloader
+    php artisan migrate --seed --force
+    inject_wrapper
+    chown -R www-data:www-data .
+    ;;
+
+  3)
+    NIGHTCORE_MARKER="/var/www/pterodactyl/public/assets/nightcore-installed.flag"
+    if [[ -f "$NIGHTCORE_MARKER" ]]; then
+      read -p "Nightcore is installed. Do you want to UPDATE it? [y/N]: " update_nc
+      if [[ "$update_nc" =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) update
+      else
+        echo -e "${YELLOW}Skipping Nightcore update.${NC}"
+      fi
+    else
+      read -p "Nightcore not found. Install it now? [y/N]: " install_nc
+      if [[ "$install_nc" =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh)
+        touch "$NIGHTCORE_MARKER"
+      else
+        echo -e "${YELLOW}Skipping Nightcore installation.${NC}"
+      fi
+    fi
+    read -p "Apply background for Nightcore? [y/N]: " apply_bg_nc
+    [[ "$apply_bg_nc" =~ ^[Yy]$ ]] && inject_wrapper
+    ;;
+
+  4)
+    NEBULA_MARKER="/var/www/pterodactyl/public/assets/nebula-installed.flag"
+    if [[ -f "$NEBULA_MARKER" ]]; then
+      read -p "Nebula is installed. Do you want to UPDATE it? [y/N]: " update_nb
+      if [[ "$update_nb" =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 2A
+      else
+        echo -e "${YELLOW}Skipping Nebula update.${NC}"
+      fi
+    else
+      read -p "Nebula not found. Install it now? [y/N]: " install_nb
+      if [[ "$install_nb" =~ ^[Yy]$ ]]; then
+        bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 2A
+        touch "$NEBULA_MARKER"
+      else
+        echo -e "${YELLOW}Skipping Nebula installation.${NC}"
+      fi
+    fi
+    read -p "Apply background for Nebula? [y/N]: " apply_bg_nb
+    [[ "$apply_bg_nb" =~ ^[Yy]$ ]] && inject_wrapper
+    ;;
+esac
+
 php artisan view:clear
 php artisan config:clear
 php artisan up
