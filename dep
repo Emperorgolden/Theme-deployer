@@ -1,11 +1,7 @@
 #!/bin/bash
 
-# Golden Hosting Enterprise - Theme Toolkit (Mega Edition)
-# 1. Add background to default panel theme
-# 2. Install NookTheme + background
-# 3. Install / Update Nightcore + background
-# 4. Install / Update Nebula + background
-# 5. Uninstall Theme / Restore backup
+# Golden Hosting Enterprise - Theme Toolkit (Final Mega Edition)
+# Fully automated, interactive, handles Nightcore & Nebula with background support
 
 set -e
 
@@ -29,36 +25,38 @@ echo -e "${YELLOW}[4]${NC} Install / Update Nebula + background"
 echo -e "${YELLOW}[5]${NC} Uninstall Theme / Restore backup"
 read -p "Choose [1-5]: " option
 
+# Paths
+WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+BACKUP="$WRAPPER.bak"
+IMG_DIR="/var/www/pterodactyl/public/assets/img"
+CSS_FILE="/var/www/pterodactyl/public/assets/custom-background.css"
+NIGHTCORE_FLAG="/var/www/pterodactyl/public/assets/nightcore-installed.flag"
+NEBULA_FLAG="/var/www/pterodactyl/public/assets/nebula-installed.flag"
+
 # === Uninstall ===
 if [[ "$option" == "5" ]]; then
-  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-  BACKUP="$WRAPPER.bak"
-  if [[ -f "$BACKUP" ]]; then
-    cp "$BACKUP" "$WRAPPER"
-    rm -f /var/www/pterodactyl/public/assets/custom-background.css
-    rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-    rm -f /var/www/pterodactyl/public/assets/nightcore-installed.flag
-    rm -f /var/www/pterodactyl/public/assets/nebula-installed.flag
-    php /var/www/pterodactyl/artisan view:clear
-    php /var/www/pterodactyl/artisan config:clear
-    php /var/www/pterodactyl/artisan up
-    systemctl restart nginx
-    echo -e "${GREEN}✅ Backup restored. All themes reverted.${NC}"
-  else
-    echo -e "${RED}❌ No backup found. Cannot restore.${NC}"
-  fi
-  exit
+    if [[ -f "$BACKUP" ]]; then
+        cp "$BACKUP" "$WRAPPER"
+        rm -f "$CSS_FILE" "$IMG_DIR/custom_bg.jpg" "$NIGHTCORE_FLAG" "$NEBULA_FLAG"
+        php /var/www/pterodactyl/artisan view:clear
+        php /var/www/pterodactyl/artisan config:clear
+        php /var/www/pterodactyl/artisan up
+        systemctl restart nginx
+        echo -e "${GREEN}✅ Backup restored. All themes reverted.${NC}"
+    else
+        echo -e "${RED}❌ No backup found. Cannot restore.${NC}"
+    fi
+    exit
 fi
 
-# === Ask for background image ===
+# === Ask for background URL ===
 read -p "Paste direct image URL for background (or leave empty to skip): " bg_url
 if [[ -n "$bg_url" ]]; then
-    mkdir -p /var/www/pterodactyl/public/assets/img
-    wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-    chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    mkdir -p "$IMG_DIR"
+    wget -q "$bg_url" -O "$IMG_DIR/custom_bg.jpg"
+    chmod 644 "$IMG_DIR/custom_bg.jpg"
 
-    # === CSS ===
-    cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
+    cat <<EOF > "$CSS_FILE"
 body {
   background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
   background-size: cover;
@@ -68,11 +66,9 @@ fi
 
 # === Template Injector ===
 inject_wrapper() {
-  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-  BACKUP="$WRAPPER.bak"
-  [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
+    [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
 
-  cat <<'EOW' > "$WRAPPER"
+    cat <<'EOW' > "$WRAPPER"
 <!DOCTYPE html>
 <html>
     <head>
@@ -90,7 +86,6 @@ inject_wrapper() {
             <link rel="mask-icon" href="/favicons/safari-pinned-tab.svg" color="#bc6e3c">
             <link rel="shortcut icon" href="/favicons/favicon.ico">
             <meta name="msapplication-config" content="/favicons/browserconfig.xml">
-            <meta name="theme-color" content="#0e4688">
         @show
 
         @section('user-data')
@@ -134,18 +129,25 @@ inject_wrapper() {
 EOW
 }
 
-# === Apply selected option ===
+# === Ensure Pterodactyl maintenance mode ===
 cd /var/www/pterodactyl
 php artisan down
 
+# === Theme Install/Update Logic ===
 case "$option" in
-  1)
+1)
     echo -e "${CYAN}Injecting background into default theme...${NC}"
     inject_wrapper
     ;;
 
-  2)
+2)
+    # Install NookTheme
     echo -e "${CYAN}Installing NookTheme...${NC}"
+    if [[ -f "$NIGHTCORE_FLAG" || -f "$NEBULA_FLAG" ]]; then
+        echo -e "${YELLOW}⚠ Another theme detected. Installing NookTheme may override it.${NC}"
+        read -p "Continue? [y/N]: " cont
+        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
+    fi
     curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
     chmod -R 755 storage/* bootstrap/cache
     composer install --no-dev --optimize-autoloader
@@ -154,51 +156,46 @@ case "$option" in
     chown -R www-data:www-data .
     ;;
 
-  3)
-    NIGHTCORE_MARKER="/var/www/pterodactyl/public/assets/nightcore-installed.flag"
-    if [[ -f "$NIGHTCORE_MARKER" ]]; then
-      read -p "Nightcore is installed. Do you want to UPDATE it? [y/N]: " update_nc
-      if [[ "$update_nc" =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) update
-      else
-        echo -e "${YELLOW}Skipping Nightcore update.${NC}"
-      fi
-    else
-      read -p "Nightcore not found. Install it now? [y/N]: " install_nc
-      if [[ "$install_nc" =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh)
-        touch "$NIGHTCORE_MARKER"
-      else
-        echo -e "${YELLOW}Skipping Nightcore installation.${NC}"
-      fi
+3)
+    # Nightcore
+    if [[ -f "$NEBULA_FLAG" ]]; then
+        echo -e "${YELLOW}⚠ Nebula is installed. Installing Nightcore may conflict.${NC}"
+        read -p "Continue? [y/N]: " cont
+        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
     fi
-    read -p "Apply background for Nightcore? [y/N]: " apply_bg_nc
-    [[ "$apply_bg_nc" =~ ^[Yy]$ ]] && inject_wrapper
+    if [[ -f "$NIGHTCORE_FLAG" ]]; then
+        echo -e "${CYAN}Updating Nightcore...${NC}"
+        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) update
+    else
+        echo -e "${CYAN}Installing Nightcore...${NC}"
+        bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh)
+        touch "$NIGHTCORE_FLAG"
+    fi
+    [[ -n "$bg_url" ]] && inject_wrapper
     ;;
 
-  4)
-    NEBULA_MARKER="/var/www/pterodactyl/public/assets/nebula-installed.flag"
-    if [[ -f "$NEBULA_MARKER" ]]; then
-      read -p "Nebula is installed. Do you want to UPDATE it? [y/N]: " update_nb
-      if [[ "$update_nb" =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 2A
-      else
-        echo -e "${YELLOW}Skipping Nebula update.${NC}"
-      fi
-    else
-      read -p "Nebula not found. Install it now? [y/N]: " install_nb
-      if [[ "$install_nb" =~ ^[Yy]$ ]]; then
-        bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 2A
-        touch "$NEBULA_MARKER"
-      else
-        echo -e "${YELLOW}Skipping Nebula installation.${NC}"
-      fi
+4)
+    # Nebula
+    if [[ -f "$NIGHTCORE_FLAG" ]]; then
+        echo -e "${YELLOW}⚠ Nightcore is installed. Installing Nebula may conflict.${NC}"
+        read -p "Continue? [y/N]: " cont
+        [[ ! "$cont" =~ ^[Yy]$ ]] && exit
     fi
-    read -p "Apply background for Nebula? [y/N]: " apply_bg_nb
-    [[ "$apply_bg_nb" =~ ^[Yy]$ ]] && inject_wrapper
+    echo -e "${CYAN}Installing Nebula Plugin...${NC}"
+    bash <(curl -s https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) 11
+    echo -e "${CYAN}Installing/Updating Nebula Theme...${NC}"
+    bash <(curl -s https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) 2A
+    touch "$NEBULA_FLAG"
+    [[ -n "$bg_url" ]] && inject_wrapper
+    ;;
+
+*)
+    echo -e "${RED}❌ Invalid option.${NC}"
+    exit 1
     ;;
 esac
 
+# === Cleanup & restart ===
 php artisan view:clear
 php artisan config:clear
 php artisan up
