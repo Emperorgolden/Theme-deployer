@@ -1,28 +1,18 @@
 #!/bin/bash
-# Golden Hosting Enterprise - Theme Toolkit (Mega Edition)
-# Automated, logged, non-interactive installers for NookTheme, Nightcore, Nebula + custom background
-# All rights reserved by Golden Hosting Enterprise © 2025
-set -euo pipefail
+
+# Golden Hosting Enterprise - Theme Toolkit
+# 1. Add background to default panel theme
+# 2. Install NookTheme and apply background
+# 3. Uninstall Theme and restore backup
+
+set -e
 
 # === COLORS ===
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
-
-LOGDIR="/var/log/ghe-themes"
-mkdir -p "$LOGDIR"
-touch "$LOGDIR/deployer.log"
-
-# Markers
-NIGHTCORE_MARKER="/var/www/pterodactyl/public/assets/nightcore-installed.flag"
-NEBULA_MARKER="/var/www/pterodactyl/public/assets/nebula-installed.flag"
-
-info(){ echo -e "${CYAN}[INFO]${NC} $*"; echo "[INFO] $(date -Iseconds) $*" >>"$LOGDIR/deployer.log"; }
-warn(){ echo -e "${YELLOW}[WARN]${NC} $*"; echo "[WARN] $(date -Iseconds) $*" >>"$LOGDIR/deployer.log"; }
-err(){ echo -e "${RED}[ERROR]${NC} $*"; echo "[ERROR] $(date -Iseconds) $*" >>"$LOGDIR/deployer.log"; }
-
-if [[ $EUID -ne 0 ]]; then
-  err "Run this script as root."
-  exit 1
-fi
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
 clear
 echo -e "${CYAN}=============================================="
@@ -32,29 +22,59 @@ echo
 
 echo -e "${YELLOW}[1]${NC} Add background to default theme"
 echo -e "${YELLOW}[2]${NC} Install NookTheme + background"
-echo -e "${YELLOW}[3]${NC} Install / Update Nightcore (auto 1C) + background"
-echo -e "${YELLOW}[4]${NC} Install / Update Nebula (auto plugin -> nebula) + background"
-echo -e "${YELLOW}[5]${NC} Uninstall Theme / Restore backup"
-read -p "Choose [1-5]: " option
+echo -e "${YELLOW}[3]${NC} Uninstall Theme / Restore backup"
+read -p "Choose [1-3]: " option
 
-# Backup convenience
-backup_wrapper() {
-  local WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-  if [[ -f "$WRAPPER" && ! -f "${WRAPPER}.ghebak" ]]; then
-    cp -a "$WRAPPER" "${WRAPPER}.ghebak"
-    info "Backup of wrapper created at ${WRAPPER}.ghebak"
+# === Uninstall ===
+if [[ "$option" == "3" ]]; then
+  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+  BACKUP="$WRAPPER.bak"
+  if [[ -f "$BACKUP" ]]; then
+    cp "$BACKUP" "$WRAPPER"
+    rm -f /var/www/pterodactyl/public/assets/custom-background.css
+    rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+    php /var/www/pterodactyl/artisan view:clear
+    php /var/www/pterodactyl/artisan config:clear
+    php /var/www/pterodactyl/artisan up
+    systemctl restart nginx
+    echo -e "${GREEN}✅ Backup restored. Theme reverted.${NC}"
+  else
+    echo -e "${RED}❌ No backup found. Cannot restore.${NC}"
   fi
-}
+  exit
+fi
 
+# === Ask for image ===
+read -p "Paste direct image URL for background: " bg_url
+if [[ -z "$bg_url" ]]; then
+    echo -e "${RED}[ERROR] No image URL provided. Exiting.${NC}"
+    exit 1
+fi
+
+mkdir -p /var/www/pterodactyl/public/assets/img
+wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
+
+# === CSS ===
+cat <<EOF > /var/www/pterodactyl/public/assets/custom-background.css
+body {
+  background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
+  background-size: cover;
+}
+EOF
+
+# === Template Injector ===
 inject_wrapper() {
-  local WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-  backup_wrapper
-  mkdir -p "$(dirname "$WRAPPER")"
-  cat > "$WRAPPER" <<'EOW'
+  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
+  BACKUP="$WRAPPER.bak"
+  [[ ! -f "$BACKUP" ]] && cp "$WRAPPER" "$BACKUP"
+
+  cat <<'EOW' > "$WRAPPER"
 <!DOCTYPE html>
 <html>
     <head>
         <title>{{ config('app.name', 'Pterodactyl') }}</title>
+
         @section('meta')
             <meta charset="utf-8">
             <meta http-equiv="X-UA-Compatible" content="IE=edge">
@@ -91,9 +111,7 @@ inject_wrapper() {
 
         @yield('assets')
         @include('layouts.scripts')
-        @if(file_exists(public_path('assets/custom-background.css')))
         <link rel="stylesheet" href="/assets/custom-background.css">
-        @endif
     </head>
     <body class="{{ $css['body'] ?? 'bg-neutral-50' }}">
         @section('content')
@@ -110,125 +128,32 @@ inject_wrapper() {
     </body>
 </html>
 EOW
-  info "Wrapper injected and footer added."
 }
 
-# Uninstall / restore
-if [[ "$option" == "5" ]]; then
-  WRAPPER="/var/www/pterodactyl/resources/views/templates/wrapper.blade.php"
-  BACKUP="$WRAPPER.ghebak"
-  if [[ -f "$BACKUP" ]]; then
-    cp -a "$BACKUP" "$WRAPPER"
-    rm -f /var/www/pterodactyl/public/assets/custom-background.css
-    rm -f /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-    rm -f "$NIGHTCORE_MARKER" "$NEBULA_MARKER"
-    php /var/www/pterodactyl/artisan view:clear || true
-    php /var/www/pterodactyl/artisan config:clear || true
-    php /var/www/pterodactyl/artisan up || true
-    systemctl restart nginx || true
-    info "✅ Backup restored. All themes reverted."
-  else
-    err "❌ No backup found at $BACKUP. Cannot restore."
-  fi
-  exit 0
-fi
-
-# Optional background (skip if left empty)
-read -p "Paste direct image URL for background (or leave empty to skip): " bg_url
-if [[ -n "${bg_url// /}" ]]; then
-  mkdir -p /var/www/pterodactyl/public/assets/img
-  info "Downloading custom background..."
-  if wget -q "$bg_url" -O /var/www/pterodactyl/public/assets/img/custom_bg.jpg; then
-    chmod 644 /var/www/pterodactyl/public/assets/img/custom_bg.jpg
-    cat > /var/www/pterodactyl/public/assets/custom-background.css <<'EOF'
-body {
-  background: url('/assets/img/custom_bg.jpg') no-repeat center center fixed;
-  background-size: cover;
-}
-EOF
-    info "Background installed to /assets/custom-background.css"
-  else
-    warn "Failed to download image. Skipping background installation."
-  fi
-fi
-
-# Do the action inside panel dir and put panel into maintenance while changing
-if [[ ! -d /var/www/pterodactyl ]]; then
-  err "/var/www/pterodactyl not found. Exiting."
-  exit 1
+# === Apply background only ===
+if [[ "$option" == "1" ]]; then
+  echo -e "${CYAN}Injecting background into default theme...${NC}"
+  inject_wrapper
+else
+  echo -e "${CYAN}Installing NookTheme...${NC}"
+  cd /var/www/pterodactyl
+  php artisan down
+  curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv
+  chmod -R 755 storage/* bootstrap/cache
+  composer install --no-dev --optimize-autoloader
+  php artisan migrate --seed --force
+  php artisan view:clear
+  php artisan config:clear
+  php artisan queue:restart
+  php artisan up
+  chown -R www-data:www-data .
+  inject_wrapper
 fi
 
 cd /var/www/pterodactyl
-php artisan down || warn "php artisan down failed (panel might already be down)"
+php artisan view:clear
+php artisan config:clear
+php artisan up
+systemctl restart nginx
 
-# --- NookTheme (option 2) ---
-if [[ "$option" == "2" ]]; then
-  info "Installing NookTheme (automated)..."
-  LOGFILE="$LOGDIR/nook-install.log"
-  ( curl -L https://github.com/Nookure/NookTheme/releases/latest/download/panel.tar.gz | tar -xzv ) >"$LOGFILE" 2>&1 || { err "Failed to download/extract NookTheme; see $LOGFILE"; }
-  chmod -R 755 storage/* bootstrap/cache || true
-  composer install --no-dev --optimize-autoloader >"$LOGFILE" 2>&1 || warn "composer step had issues (check $LOGFILE)"
-  php artisan migrate --seed --force >"$LOGFILE" 2>&1 || warn "migrate may have issues (check $LOGFILE)"
-  inject_wrapper
-  chown -R www-data:www-data .
-  info "NookTheme installation finished. Log: $LOGFILE"
-fi
-
-# --- Nightcore (option 3) ---
-if [[ "$option" == "3" ]]; then
-  LOGFILE="$LOGDIR/nightcore-install.log"
-  info "Installing/updating Nightcore (non-interactive). logs -> $LOGFILE"
-  if [[ -f "$NIGHTCORE_MARKER" ]]; then
-    info "Nightcore marker found; running update flow."
-    # Some upstream scripts accept an 'update' flow; if not, reinstall.
-    printf "1C\n" | bash <(curl -fsSL https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) >"$LOGFILE" 2>&1 || warn "Nightcore update command returned non-zero (see $LOGFILE)"
-  else
-    # Run the installer and feed the menu choice '1C' (Nightcore) automatically.
-    # Output is redirected to the log so the interactive text won't appear to users.
-    printf "1C\n" | bash <(curl -fsSL https://raw.githubusercontent.com/LeXcZxMoDz9/kontol/refs/heads/main/bangke.sh) >"$LOGFILE" 2>&1
-    if [[ $? -eq 0 ]]; then
-      touch "$NIGHTCORE_MARKER"
-      info "Nightcore installed successfully. Marker created."
-    else
-      warn "Nightcore installer finished with errors; check $LOGFILE"
-    fi
-  fi
-  read -p "Apply background to Nightcore now? [y/N]: " apply_bg_nc
-  if [[ "${apply_bg_nc,,}" == "y" ]]; then inject_wrapper; fi
-fi
-
-# --- Nebula (option 4) ---
-if [[ "$option" == "4" ]]; then
-  LOGFILE="$LOGDIR/nebula-install.log"
-  info "Installing Nebula (automated plugin + theme). logs -> $LOGFILE"
-
-  # Step 1: Install plugin prerequisites (the zero.sh menu option 11)
-  info "Running plugin installer (zero.sh) to ensure prerequisites (automated input '11')..."
-  # feed "11" then "2A" (plugin install then nebula)
-  # Add extra newlines so if the script expects Enter the flow continues.
-  printf "11\n2A\n\n" | bash <(curl -fsSL https://raw.githubusercontent.com/KiwamiXq1031/installer-premium/refs/heads/main/zero.sh) >"$LOGFILE" 2>&1
-  if [[ $? -eq 0 ]]; then
-    touch "$NEBULA_MARKER"
-    info "Nebula installation flow completed (or attempted). Check $LOGFILE for details."
-  else
-    warn "Nebula installer returned errors; check $LOGFILE"
-  fi
-
-  read -p "Apply background to Nebula now? [y/N]: " apply_bg_nb
-  if [[ "${apply_bg_nb,,}" == "y" ]]; then inject_wrapper; fi
-fi
-
-# --- Background only (option 1) ---
-if [[ "$option" == "1" ]]; then
-  inject_wrapper
-  info "Background injected (option 1 done)."
-fi
-
-# Clear caches and bring panel back up
-php artisan view:clear || true
-php artisan config:clear || true
-php artisan up || true
-systemctl restart nginx || true
-
-info "✅ Theme deployment flow finished. Check logs in $LOGDIR for full output."
-exit 0
+echo -e "${GREEN}✅ Theme deployment complete.${NC}"
